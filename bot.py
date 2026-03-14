@@ -116,7 +116,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = await get_user(user_id)
     profile_data = await get_profile(user_id)
     fursona_data = await get_fursona(user_id)
-    # format_profile уже экранирует внутри
     await update.message.reply_text(
         format_profile(user_data, profile_data, fursona_data),
         parse_mode=ParseMode.MARKDOWN_V2
@@ -465,8 +464,8 @@ def main():
     app.add_handler(CallbackQueryHandler(territory_callback, pattern="^territory_"))
     app.add_handler(CallbackQueryHandler(settings_callback, pattern="^(toggle_welcome|edit_commands)$"))
 
-    # Текстовые сообщения (меню) - с block=False, чтобы не блокировать дальнейшие обработчики
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons), block=False)
+    # Текстовые сообщения (меню) - без block
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
     # Голосовые
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     # Обычные сообщения (для AI) - этот обработчик сработает, если текст не совпал с кнопками
