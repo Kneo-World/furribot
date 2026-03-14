@@ -364,15 +364,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply)
 
 # ---------- Инициализация и запуск ----------
-async def init_all():
-    await init_db()
-    await init_territories()
-
 def main():
-    # Инициализация БД (однократно)
-    asyncio.run(init_all())
+    # Создаём и устанавливаем цикл событий
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    # Создание приложения
+    # Инициализация БД в этом цикле
+    loop.run_until_complete(init_db())
+    loop.run_until_complete(init_territories())
+
+    # Создание приложения (синхронно)
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # Регистрация обработчиков
