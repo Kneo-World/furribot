@@ -1,30 +1,32 @@
 import logging
 import asyncio
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from telegram.constants import ParseMode
 
 import config
-from database import init_db, get_user, create_user
+from database import init_db, create_user, get_user, get_user_by_username, get_profile, update_profile, get_fursona, update_fursona, find_users_by_tags, create_group, join_group, add_like, check_mutual_like, add_match, get_random_profile, get_territories, update_territory_owner, get_group_settings, update_group_settings
 from ai import generate_reply, compatibility_analysis
-from social import get_profile, update_fursona, find_users_by_tags, create_group, join_group, get_random_profile, add_match
-from game import add_xp, get_level_info, daily_reward, battle, territory_status, attack_territory
+from game import add_xp, get_level_info, daily_reward, battle, territory_status, attack_territory, assign_random_quest, get_inventory, add_item
 from image import generate_image
 from voice import transcribe_audio, text_to_speech
 from utils import random_mood, format_profile, cooldown_check
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Хранилище настроений (в памяти)
+# Хранилище настроений пользователей
 user_moods = {}
-group_settings_cache = {}  # chat_id: settings
 
+# ---------- Команды ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await create_user(user.id, user.username or user.first_name)
-    text = f"Ррр… Привет, {user.first_name}! Я Пушистик – твой фурри‑друг.\nНапиши /menu, чтобы начать."
-    await update.message.reply_text(text)
+    await update.message.reply_text(
+        f"Ррр! Привет, {user.first_name}!\n"
+        "Я Пушистик – твой дерзкий фурри-друг. Напиши /menu, чтобы начать."
+    )
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -52,19 +54,21 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = await get_user(user_id)
     profile_data = await get_profile(user_id)
-    fursona_data = await get_fursona(user_id)  # из social
+    fursona_data = await get_fursona(user_id)
     await update.message.reply_text(
         format_profile(user_data, profile_data, fursona_data),
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
 async def fursona(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Интерактивный конструктор через inline кнопки
+    """Интерактивный конструктор фурсоны"""
     keyboard = [
         [InlineKeyboardButton("🐺 Волк", callback_data="fursona_wolf"),
          InlineKeyboardButton("🦊 Лис", callback_data="fursona_fox")],
         [InlineKeyboardButton("🐱 Кошка", callback_data="fursona_cat"),
          InlineKeyboardButton("🐉 Дракон", callback_data="fursona_dragon")],
+        [InlineKeyboardButton("🐻 Медведь", callback_data="fursona_bear"),
+         InlineKeyboardButton("🐧 Пингвин", callback_data="fursona_penguin")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Выбери вид твоей фурсоны:", reply_markup=reply_markup)
@@ -73,12 +77,20 @@ async def fursona_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    # Сохраняем выбранный вид, затем запрашиваем цвет и т.д.
-    # Упрощённо – сохраняем сразу.
     user_id = query.from_user.id
-    species = data.split('_')[1]
-    await update_fursona(user_id, species=species)
-    await query.edit_message_text(f"Отлично! Ты выбрал {species}. Теперь укажи цвет (например: рыжий, серый).")
+
+    if data.startswith("fursona_"):
+        species = data.split('_')[1]
+        await update_fursona(user_id, species=species)
+        # Запрашиваем цвет
+        await query.edit_message_text(f"Отлично! Ты выбрал {species}. Теперь напиши цвет (например: рыжий, серый).")
+        context.user_data["fursona_step"] = "color"
+    elif data.startswith("color_"):
+        color = data.split('_')[1]
+        await update_fursona(user_id, color=color)
+        await query.edit_message_text("Теперь опиши характер (например: дерзкий, игривый).")
+        context.user_data["fursona_step"] = "personality"
+    # ... и так далее для остальных шагов (можно реализовать через состояния)
 
 async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -94,7 +106,6 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # Получаем случайного пользователя (кроме себя и тех, с кем уже был матч)
     candidate = await get_random_profile(user_id)
     if not candidate:
         await update.message.reply_text("Пока нет других фурри для знакомства.")
@@ -116,39 +127,137 @@ async def match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action, other_id = data.split('_')
     other_id = int(other_id)
     if action == "like":
-        # Проверяем взаимность
         if await check_mutual_like(user_id, other_id):
             await query.edit_message_text("Это взаимно! Вы теперь друзья.")
             await add_match(user_id, other_id)
         else:
             await query.edit_message_text("Лайк отправлен!")
-            await save_like(user_id, other_id)
+            await add_like(user_id, other_id)
     else:
         await query.edit_message_text("Пропущено.")
 
-async def battle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def compatibility(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Укажи противника: /battle @user")
+        await update.message.reply_text("Укажи пользователя: /compatibility @username")
         return
-    # Получаем user_id по упоминанию (упрощённо)
     target = context.args[0]
     if not target.startswith('@'):
         await update.message.reply_text("Упоминание должно начинаться с @")
         return
     username = target[1:]
-    # Ищем в БД
-    # ... (код получения user_id)
-    user1 = update.effective_user.id
-    user2 = 123  # заменить на реальный
-    result = await battle(user1, user2)
+    user2 = await get_user_by_username(username)
+    if not user2:
+        await update.message.reply_text("Пользователь не найден.")
+        return
+    user1_id = update.effective_user.id
+    user2_id = user2[0]
+
+    fursona1 = await get_fursona(user1_id)
+    fursona2 = await get_fursona(user2_id)
+    if not fursona1 or not fursona2:
+        await update.message.reply_text("У одного из вас не заполнена фурсона.")
+        return
+
+    analysis = await compatibility_analysis(user1_id, user2_id, fursona1, fursona2)
+    await update.message.reply_text(analysis)
+
+async def create_group_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = " ".join(context.args).split(";")
+    if len(args) < 5:
+        await update.message.reply_text("Использование: /create_group Имя;Описание;теги;уровень;цена")
+        return
+    name, desc, tags, req_lvl, price = [a.strip() for a in args]
+    try:
+        req_lvl = int(req_lvl)
+        price = int(price)
+    except:
+        await update.message.reply_text("Уровень и цена должны быть числами.")
+        return
+    ok, msg = await create_group(name, desc, tags, req_lvl, price, update.effective_user.id)
+    await update.message.reply_text(msg)
+
+async def join_group_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Укажи ID группы. Например: /join_group 1")
+        return
+    try:
+        gid = int(context.args[0])
+    except:
+        await update.message.reply_text("ID группы должен быть числом.")
+        return
+    ok, msg = await join_group(gid, update.effective_user.id)
+    await update.message.reply_text(msg)
+
+async def level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    info = await get_level_info(user_id)
+    if not info:
+        await update.message.reply_text("Сначала напиши /start.")
+        return
+    lvl, xp = info
+    next_xp = lvl * 100
+    await update.message.reply_text(f"⭐ Уровень: {lvl}\n✨ XP: {xp}/{next_xp}")
+
+async def quest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    quest = await assign_random_quest(user_id)
+    if not quest:
+        await update.message.reply_text("У тебя уже есть активный квест.")
+    else:
+        await update.message.reply_text(f"Новый квест: {quest['name']}\n{quest['desc']}\nНаграда: {quest['reward_xp']} XP, {quest['reward_coins']} 🪙, {quest['reward_fish']} 🐟")
+
+async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    reward = await daily_reward(user_id)
+    if not reward:
+        await update.message.reply_text("Ты уже получал награду сегодня. Приходи завтра!")
+    else:
+        coins, fish, xp = reward
+        await add_xp(user_id, xp)
+        await update.message.reply_text(f"🎁 Ежедневная награда: +{coins} 🪙, +{fish} 🐟, +{xp} ✨")
+
+async def inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    items = await get_inventory(user_id)
+    if not items:
+        await update.message.reply_text("📦 Инвентарь пуст.")
+        return
+    text = "📦 Инвентарь:\n" + "\n".join([f"{name}: {qty}" for name, qty in items])
+    await update.message.reply_text(text)
+
+async def battle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Укажи противника: /battle @user")
+        return
+    target = context.args[0]
+    if not target.startswith('@'):
+        await update.message.reply_text("Упоминание должно начинаться с @")
+        return
+    username = target[1:]
+    user2 = await get_user_by_username(username)
+    if not user2:
+        await update.message.reply_text("Пользователь не найден.")
+        return
+    user1_id = update.effective_user.id
+    user2_id = user2[0]
+    result = await battle(user1_id, user2_id)
     await update.message.reply_text(result)
 
-async def territory(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Показывает карту территорий и кнопки для атаки
+async def territory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Показываем карту территорий и кнопку атаки
     status = await territory_status()
-    keyboard = [[InlineKeyboardButton("Атаковать", callback_data="attack_territory")]]
+    keyboard = [[InlineKeyboardButton("⚔️ Атаковать", callback_data="territory_attack")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(status, reply_markup=reply_markup)
+    await update.message.reply_text(status, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+
+async def territory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "territory_attack":
+        # Здесь нужно выбрать территорию и группу для атаки
+        # Упрощённо – просто сообщение
+        await query.edit_message_text("Функция атаки в разработке.")
 
 async def draw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args)
@@ -162,6 +271,64 @@ async def draw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Не удалось нарисовать: {e}")
 
+async def hug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mood = user_moods.get(user_id, random_mood())
+    await add_xp(user_id, 5)
+    await update.message.reply_text(f"*обнимает тебя* Муррр! 🤗 (настроение: {mood})")
+
+async def pat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mood = user_moods.get(user_id, random_mood())
+    await add_xp(user_id, 5)
+    await update.message.reply_text(f"*гладит по головке* Мяу, приятно~ 🐾 (настроение: {mood})")
+
+async def purr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mood = user_moods.get(user_id, random_mood())
+    await add_xp(user_id, 5)
+    await update.message.reply_text(f"Ррр... мур-мур-мур... 😸 (настроение: {mood})")
+
+async def growl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mood = user_moods.get(user_id, random_mood())
+    await add_xp(user_id, 5)
+    await update.message.reply_text(f"Рррр! Сердитый пушистик! 🐯 (настроение: {mood})")
+
+async def bite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mood = user_moods.get(user_id, random_mood())
+    await add_xp(user_id, 5)
+    await update.message.reply_text(f"*кусает за нос* Хрум! 🐊 (настроение: {mood})")
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Настройки бота в группе"""
+    chat = update.effective_chat
+    if chat.type == "private":
+        await update.message.reply_text("Эта команда только для групп.")
+        return
+    settings = await get_group_settings(chat.id)
+    text = f"⚙️ **Настройки группы**\nПриветствие: {'включено' if settings['welcome_enabled'] else 'выключено'}\nРазрешённые команды: {settings['allowed_commands']}"
+    keyboard = [
+        [InlineKeyboardButton("🔄 Переключить приветствие", callback_data="toggle_welcome")],
+        [InlineKeyboardButton("🔧 Изменить команды", callback_data="edit_commands")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+
+async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    chat_id = update.effective_chat.id
+    if data == "toggle_welcome":
+        settings = await get_group_settings(chat_id)
+        new_val = not settings["welcome_enabled"]
+        await update_group_settings(chat_id, welcome_enabled=new_val)
+        await query.edit_message_text(f"Приветствие теперь {'включено' if new_val else 'выключено'}.")
+    elif data == "edit_commands":
+        await query.edit_message_text("Функция в разработке.")
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     voice = update.message.voice
     if not voice:
@@ -171,19 +338,20 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = await transcribe_audio("voice.ogg")
     if text:
         await update.message.reply_text(f"Ты сказал: {text}")
-        # Отправляем в AI для ответа
-        reply = await generate_reply(text, user_moods.get(update.effective_user.id, "cute"))
+        # Отправляем в AI
+        mood = user_moods.get(update.effective_user.id, random_mood())
+        reply = await generate_reply(text, mood)
         await update.message.reply_text(reply)
     else:
         await update.message.reply_text("Не удалось распознать голос.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # В группах реагируем только на упоминания или если бот отвечает
+    # В группах реагируем только на упоминания
     if update.effective_chat.type != "private":
-        # Проверяем, упомянут ли бот
         bot_username = context.bot.username
         if bot_username not in update.message.text:
             return
+
     user_id = update.effective_user.id
     user_message = update.message.text
     await create_user(user_id, update.effective_user.username or update.effective_user.first_name)
@@ -197,8 +365,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = await generate_reply(user_message, mood)
     await update.message.reply_text(reply)
 
+# ---------- Главная функция ----------
 def main():
     asyncio.run(init_db())
+    # Инициализируем территории (если пусто)
+    asyncio.run(init_territories())  # из database
+
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # Команды
@@ -208,20 +380,34 @@ def main():
     app.add_handler(CommandHandler("fursona", fursona))
     app.add_handler(CommandHandler("find", find))
     app.add_handler(CommandHandler("match", match))
-    app.add_handler(CommandHandler("battle", battle))
-    app.add_handler(CommandHandler("territory", territory))
-    app.add_handler(CommandHandler("draw", draw))
+    app.add_handler(CommandHandler("compatibility", compatibility))
+    app.add_handler(CommandHandler("create_group", create_group_cmd))
+    app.add_handler(CommandHandler("join_group", join_group_cmd))
+    app.add_handler(CommandHandler("level", level))
+    app.add_handler(CommandHandler("quest", quest))
     app.add_handler(CommandHandler("daily", daily))
     app.add_handler(CommandHandler("inventory", inventory))
-    app.add_handler(CommandHandler("compatibility", compatibility))
+    app.add_handler(CommandHandler("battle", battle_cmd))
+    app.add_handler(CommandHandler("territory", territory_cmd))
+    app.add_handler(CommandHandler("draw", draw))
+    app.add_handler(CommandHandler("hug", hug))
+    app.add_handler(CommandHandler("pat", pat))
+    app.add_handler(CommandHandler("purr", purr))
+    app.add_handler(CommandHandler("growl", growl))
+    app.add_handler(CommandHandler("bite", bite))
+    app.add_handler(CommandHandler("settings", settings))
 
-    # Обработчики кнопок
+    # Callback-обработчики
     app.add_handler(CallbackQueryHandler(fursona_callback, pattern="^fursona_"))
     app.add_handler(CallbackQueryHandler(match_callback, pattern="^(like|pass)_"))
+    app.add_handler(CallbackQueryHandler(territory_callback, pattern="^territory_"))
+    app.add_handler(CallbackQueryHandler(settings_callback, pattern="^(toggle_welcome|edit_commands)$"))
 
-    # Текстовые сообщения (меню и обычные)
+    # Текстовые сообщения (меню)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
+    # Голосовые
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    # Обычные сообщения (для AI)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     loop = asyncio.new_event_loop()
