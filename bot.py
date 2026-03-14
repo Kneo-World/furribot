@@ -428,8 +428,11 @@ async def init_all():
     await init_territories()
 
 def main():
-    # Инициализация БД (однократно)
-    asyncio.run(init_all())
+    # Создаём цикл событий для главного потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    # Инициализация БД в этом же цикле
+    loop.run_until_complete(init_all())
 
     # Создание приложения
     app = Application.builder().token(config.BOT_TOKEN).build()
@@ -464,7 +467,7 @@ def main():
     app.add_handler(CallbackQueryHandler(territory_callback, pattern="^territory_"))
     app.add_handler(CallbackQueryHandler(settings_callback, pattern="^(toggle_welcome|edit_commands)$"))
 
-    # Текстовые сообщения (меню) - без block
+    # Текстовые сообщения (меню)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
     # Голосовые
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
@@ -474,7 +477,7 @@ def main():
     # Глобальный обработчик ошибок
     app.add_error_handler(error_handler)
 
-    # Запуск бота (синхронный метод)
+    # Запуск бота (использует тот же цикл)
     app.run_polling()
 
 if __name__ == "__main__":
