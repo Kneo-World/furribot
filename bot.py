@@ -92,10 +92,8 @@ async def fursona_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("fursona_"):
         species = data.split('_')[1]
         await update_fursona(user_id, species=species)
-        # Запрашиваем цвет
         await query.edit_message_text(f"Отлично! Ты выбрал {species}. Теперь напиши цвет (например: рыжий, серый).")
         context.user_data["fursona_step"] = "color"
-    # ... далее можно добавить другие шаги
 
 async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -259,7 +257,6 @@ async def territory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
     if data == "territory_attack":
-        # Упрощённо – просто сообщение
         await query.edit_message_text("Функция атаки в разработке.")
 
 async def draw(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -366,14 +363,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = await generate_reply(user_message, mood)
     await update.message.reply_text(reply)
 
-# ---------- Асинхронная инициализация и запуск ----------
-async def async_main():
-    """Асинхронная функция для запуска бота."""
+# ---------- Инициализация и запуск ----------
+async def init_all():
     await init_db()
-    await init_territories()  # теперь импортировано
+    await init_territories()
+
+def main():
+    # Инициализация БД (однократно)
+    asyncio.run(init_all())
+
+    # Создание приложения
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # Команды
+    # Регистрация обработчиков
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CommandHandler("profile", profile))
@@ -410,11 +412,8 @@ async def async_main():
     # Обычные сообщения (для AI)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    await app.run_polling()
-
-def main():
-    """Синхронная точка входа."""
-    asyncio.run(async_main())
+    # Запуск бота (синхронный метод)
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
