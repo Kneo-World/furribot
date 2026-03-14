@@ -1,4 +1,5 @@
 import logging
+import asyncio  # добавлен импорт
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -171,7 +172,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # Инициализация БД
-    import asyncio
     asyncio.run(init_db())
 
     # Создаём приложение
@@ -194,7 +194,9 @@ def main():
     app.add_handler(CommandHandler("draw", draw))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем polling
+    # Явно создаём цикл событий и запускаем бота
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app.run_polling()
 
 if __name__ == "__main__":
