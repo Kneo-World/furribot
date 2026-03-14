@@ -76,7 +76,10 @@ async def assign_random_quest(user_id: int):
         quest = random.choice(QUESTS)
         await db.execute('INSERT INTO quests (name, description, target, reward_xp, reward_coins, reward_fish) VALUES (?, ?, ?, ?, ?, ?)',
                          (quest["name"], quest["desc"], quest["target"], quest["reward_xp"], quest["reward_coins"], quest["reward_fish"]))
-        quest_id = (await db.execute('SELECT last_insert_rowid()')).fetchone()[0]
+        # Получаем ID вставленной записи
+        cursor = await db.execute('SELECT last_insert_rowid()')
+        row = await cursor.fetchone()
+        quest_id = row[0]
         await db.execute('INSERT INTO user_quests (user_id, quest_id) VALUES (?, ?)', (user_id, quest_id))
         await db.commit()
         return quest
@@ -84,13 +87,11 @@ async def assign_random_quest(user_id: int):
 # ---------- Битвы ----------
 async def battle(user1_id: int, user2_id: int):
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Получаем уровень и силу (уровень + бонусы)
         u1 = await (await db.execute('SELECT level, coins FROM users WHERE user_id = ?', (user1_id,))).fetchone()
         u2 = await (await db.execute('SELECT level, coins FROM users WHERE user_id = ?', (user2_id,))).fetchone()
         if not u1 or not u2:
             return "Один из участников не найден."
 
-        # Простая формула: сила = уровень * 10 + случайность
         power1 = u1[0] * 10 + random.randint(-5, 5)
         power2 = u2[0] * 10 + random.randint(-5, 5)
 
@@ -109,12 +110,10 @@ async def battle(user1_id: int, user2_id: int):
             xp_gain = 20
             coins_gain = 10
 
-        # Начисляем награды
-        if winner:
+        if 'winner' in locals():
             await db.execute('UPDATE users SET xp = xp + ?, coins = coins + ? WHERE user_id = ?', (xp_gain, coins_gain, winner))
-            await db.execute('UPDATE users SET xp = xp + 10 WHERE user_id = ?', (loser,))  # утешительный приз
+            await db.execute('UPDATE users SET xp = xp + 10 WHERE user_id = ?', (loser,))
         else:
-            # ничья - оба получают немного
             await db.execute('UPDATE users SET xp = xp + ? WHERE user_id IN (?, ?)', (xp_gain, user1_id, user2_id))
             await db.execute('UPDATE users SET coins = coins + ? WHERE user_id IN (?, ?)', (coins_gain, user1_id, user2_id))
 
@@ -136,20 +135,17 @@ async def territory_status():
 
 async def attack_territory(territory_id: int, group_id: int, attacker_power: int):
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Получаем текущего владельца и влияние
         ter = await (await db.execute('SELECT owner_group_id, influence FROM territories WHERE territory_id = ?', (territory_id,))).fetchone()
         if not ter:
             return False, "Территория не найдена."
         owner, inf = ter
         if owner == group_id:
             return False, "Ты уже владеешь этой территорией."
-        # Простая механика: если сила атакующего больше влияния, захват
         if attacker_power > inf:
             await db.execute('UPDATE territories SET owner_group_id = ?, influence = ? WHERE territory_id = ?', (group_id, attacker_power, territory_id))
             await db.commit()
             return True, "Территория захвачена!"
         else:
-            # Увеличиваем влияние защитника
             await db.execute('UPDATE territories SET influence = influence + 10 WHERE territory_id = ?', (territory_id,))
             await db.commit()
             return False, "Атака отражена! Влияние защитника увеличилось."
