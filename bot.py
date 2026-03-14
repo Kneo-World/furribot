@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import random
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from telegram.constants import ParseMode
@@ -28,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 # Хранилище настроений пользователей
 user_moods = {}
+
+# ---------- Экранирование Markdown ----------
+def escape_markdown(text: str) -> str:
+    """Экранирует специальные символы для MarkdownV2"""
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
+
+# ---------- Глобальный обработчик ошибок ----------
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+    if update and update.effective_message:
+        await update.effective_message.reply_text("😿 Что-то пошло не так. Попробуй позже.")
 
 # ---------- Команды ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,18 +72,56 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif text == "🤖 AI чат":
         await ai_chat(update, context)
 
+# ---------- Меню (отсутствующие функции) ----------
+async def find_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = escape_markdown(
+        "🔍 **Поиск фурри**\n"
+        "• /find <тег> – найти по тегу\n"
+        "• /match – случайный фурри (Tinder)\n"
+        "• /compatibility @user – проверить совместимость"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+async def groups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = escape_markdown(
+        "🐺 **Группы и стаи**\n"
+        "• /create_group – создать группу\n"
+        "• /join_group <id> – вступить\n"
+        "• /settings – настройки бота в группе"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+async def games_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = escape_markdown(
+        "🎮 **Игры**\n"
+        "• /level – твой уровень\n"
+        "• /quest – новый квест\n"
+        "• /battle @user – битва\n"
+        "• /territory – карта территорий"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+async def ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = escape_markdown(
+        "🤖 **AI чат**\n"
+        "Просто напиши мне что-нибудь – я отвечу как фурри-персонаж!\n"
+        "Моё настроение может меняться 😼"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+# ---------- Профиль и фурсона ----------
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = await get_user(user_id)
     profile_data = await get_profile(user_id)
     fursona_data = await get_fursona(user_id)
+    # format_profile уже использует экранирование внутри
     await update.message.reply_text(
         format_profile(user_data, profile_data, fursona_data),
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
 async def fursona(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Интерактивный конструктор фурсоны"""
     keyboard = [
         [InlineKeyboardButton("🐺 Волк", callback_data="fursona_wolf"),
          InlineKeyboardButton("🦊 Лис", callback_data="fursona_fox")],
@@ -95,6 +145,7 @@ async def fursona_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"Отлично! Ты выбрал {species}. Теперь напиши цвет (например: рыжий, серый).")
         context.user_data["fursona_step"] = "color"
 
+# ---------- Поиск и Tinder ----------
 async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Укажи тег. Например: /find art")
@@ -105,7 +156,7 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Никого не найдено.")
         return
     text = "Найденные фурри:\n" + "\n".join([f"@{r[1]} – {r[2]}" for r in results])
-    await update.message.reply_text(text)
+    await update.message.reply_text(escape_markdown(text), parse_mode=ParseMode.MARKDOWN_V2)
 
 async def match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -120,7 +171,7 @@ async def match(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("❌", callback_data=f"pass_{uid}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(escape_markdown(text), reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
 async def match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -139,6 +190,7 @@ async def match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("Пропущено.")
 
+# ---------- Совместимость ----------
 async def compatibility(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Укажи пользователя: /compatibility @username")
@@ -162,8 +214,9 @@ async def compatibility(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     analysis = await compatibility_analysis(user1_id, user2_id, fursona1, fursona2)
-    await update.message.reply_text(analysis)
+    await update.message.reply_text(escape_markdown(analysis), parse_mode=ParseMode.MARKDOWN_V2)
 
+# ---------- Группы ----------
 async def create_group_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args).split(";")
     if len(args) < 5:
@@ -191,6 +244,7 @@ async def join_group_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok, msg = await join_group(gid, update.effective_user.id)
     await update.message.reply_text(msg)
 
+# ---------- Игры ----------
 async def level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     info = await get_level_info(user_id)
@@ -250,7 +304,7 @@ async def territory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = await territory_status()
     keyboard = [[InlineKeyboardButton("⚔️ Атаковать", callback_data="territory_attack")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(status, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(escape_markdown(status), reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
 async def territory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -259,6 +313,7 @@ async def territory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == "territory_attack":
         await query.edit_message_text("Функция атаки в разработке.")
 
+# ---------- Изображения ----------
 async def draw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args)
     if not prompt:
@@ -271,6 +326,7 @@ async def draw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Не удалось нарисовать: {e}")
 
+# ---------- Взаимодействия ----------
 async def hug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     mood = user_moods.get(user_id, random_mood())
@@ -301,46 +357,7 @@ async def bite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_xp(user_id, 5)
     await update.message.reply_text(f"*кусает за нос* Хрум! 🐊 (настроение: {mood})")
 
-async def find_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Меню поиска фурри"""
-    await update.message.reply_text(
-        "🔍 **Поиск фурри**\n"
-        "• `/find <тег>` – найти по тегу\n"
-        "• `/match` – случайный фурри (Tinder)\n"
-        "• `/compatibility @user` – проверить совместимость",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def groups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Меню групп"""
-    await update.message.reply_text(
-        "🐺 **Группы и стаи**\n"
-        "• `/create_group` – создать группу\n"
-        "• `/join_group <id>` – вступить\n"
-        "• `/settings` – настройки бота в группе",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def games_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Меню игр"""
-    await update.message.reply_text(
-        "🎮 **Игры**\n"
-        "• `/level` – твой уровень\n"
-        "• `/quest` – новый квест\n"
-        "• `/battle @user` – битва\n"
-        "• `/territory` – карта территорий",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """AI чат"""
-    await update.message.reply_text(
-        "🤖 **AI чат**\n"
-        "Просто напиши мне что-нибудь – я отвечу как фурри-персонаж!\n"
-        "Моё настроение может меняться 😼",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
+# ---------- Настройки группы ----------
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type == "private":
@@ -353,7 +370,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔧 Изменить команды", callback_data="edit_commands")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(escape_markdown(text), reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
 async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -368,6 +385,7 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "edit_commands":
         await query.edit_message_text("Функция в разработке.")
 
+# ---------- Голосовые сообщения ----------
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     voice = update.message.voice
     if not voice:
@@ -383,6 +401,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Не удалось распознать голос.")
 
+# ---------- Обработка текстовых сообщений (AI) ----------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # В группах реагируем только на упоминания
     if update.effective_chat.type != "private":
@@ -401,19 +420,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_moods[user_id] = mood
 
     reply = await generate_reply(user_message, mood)
-    await update.message.reply_text(reply)
+    # AI ответ тоже нужно экранировать, так как может содержать спецсимволы
+    await update.message.reply_text(escape_markdown(reply), parse_mode=ParseMode.MARKDOWN_V2)
 
 # ---------- Инициализация и запуск ----------
+async def init_all():
+    await init_db()
+    await init_territories()
+
 def main():
-    # Создаём и устанавливаем цикл событий
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Инициализация БД (однократно)
+    asyncio.run(init_all())
 
-    # Инициализация БД в этом цикле
-    loop.run_until_complete(init_db())
-    loop.run_until_complete(init_territories())
-
-    # Создание приложения (синхронно)
+    # Создание приложения
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # Регистрация обработчиков
@@ -452,6 +471,9 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     # Обычные сообщения (для AI)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Глобальный обработчик ошибок
+    app.add_error_handler(error_handler)
 
     # Запуск бота (синхронный метод)
     app.run_polling()
