@@ -301,6 +301,46 @@ async def bite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_xp(user_id, 5)
     await update.message.reply_text(f"*кусает за нос* Хрум! 🐊 (настроение: {mood})")
 
+async def find_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Меню поиска фурри"""
+    await update.message.reply_text(
+        "🔍 **Поиск фурри**\n"
+        "• `/find <тег>` – найти по тегу\n"
+        "• `/match` – случайный фурри (Tinder)\n"
+        "• `/compatibility @user` – проверить совместимость",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def groups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Меню групп"""
+    await update.message.reply_text(
+        "🐺 **Группы и стаи**\n"
+        "• `/create_group` – создать группу\n"
+        "• `/join_group <id>` – вступить\n"
+        "• `/settings` – настройки бота в группе",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def games_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Меню игр"""
+    await update.message.reply_text(
+        "🎮 **Игры**\n"
+        "• `/level` – твой уровень\n"
+        "• `/quest` – новый квест\n"
+        "• `/battle @user` – битва\n"
+        "• `/territory` – карта территорий",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """AI чат"""
+    await update.message.reply_text(
+        "🤖 **AI чат**\n"
+        "Просто напиши мне что-нибудь – я отвечу как фурри-персонаж!\n"
+        "Моё настроение может меняться 😼",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type == "private":
