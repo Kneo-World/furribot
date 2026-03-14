@@ -71,8 +71,9 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         await games_menu(update, context)
     elif text == "🤖 AI чат":
         await ai_chat(update, context)
+    # Если текст не совпадает, просто выходим – управление перейдёт к следующему обработчику
 
-# ---------- Меню (отсутствующие функции) ----------
+# ---------- Меню ----------
 async def find_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = escape_markdown(
         "🔍 **Поиск фурри**\n"
@@ -115,7 +116,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = await get_user(user_id)
     profile_data = await get_profile(user_id)
     fursona_data = await get_fursona(user_id)
-    # format_profile уже использует экранирование внутри
+    # format_profile уже экранирует внутри
     await update.message.reply_text(
         format_profile(user_data, profile_data, fursona_data),
         parse_mode=ParseMode.MARKDOWN_V2
@@ -420,7 +421,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_moods[user_id] = mood
 
     reply = await generate_reply(user_message, mood)
-    # AI ответ тоже нужно экранировать, так как может содержать спецсимволы
     await update.message.reply_text(escape_markdown(reply), parse_mode=ParseMode.MARKDOWN_V2)
 
 # ---------- Инициализация и запуск ----------
@@ -465,11 +465,11 @@ def main():
     app.add_handler(CallbackQueryHandler(territory_callback, pattern="^territory_"))
     app.add_handler(CallbackQueryHandler(settings_callback, pattern="^(toggle_welcome|edit_commands)$"))
 
-    # Текстовые сообщения (меню)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
+    # Текстовые сообщения (меню) - с block=False, чтобы не блокировать дальнейшие обработчики
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons), block=False)
     # Голосовые
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    # Обычные сообщения (для AI)
+    # Обычные сообщения (для AI) - этот обработчик сработает, если текст не совпал с кнопками
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Глобальный обработчик ошибок
