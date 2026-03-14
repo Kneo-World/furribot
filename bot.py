@@ -6,9 +6,19 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 
 import config
-from database import init_db, create_user, get_user, get_user_by_username, get_profile, update_profile, get_fursona, update_fursona, find_users_by_tags, create_group, join_group, add_like, check_mutual_like, add_match, get_random_profile, get_territories, update_territory_owner, get_group_settings, update_group_settings
+from database import (
+    init_db, init_territories, create_user, get_user, get_user_by_username,
+    get_profile, update_profile, get_fursona, update_fursona,
+    find_users_by_tags, create_group, join_group,
+    add_like, check_mutual_like, add_match, get_random_profile,
+    get_territories, update_territory_owner, get_group_settings, update_group_settings
+)
 from ai import generate_reply, compatibility_analysis
-from game import add_xp, get_level_info, daily_reward, battle, territory_status, attack_territory, assign_random_quest, get_inventory, add_item
+from game import (
+    add_xp, get_level_info, daily_reward, battle,
+    territory_status, attack_territory, assign_random_quest,
+    get_inventory, add_item
+)
 from image import generate_image
 from voice import transcribe_audio, text_to_speech
 from utils import random_mood, format_profile, cooldown_check
@@ -85,12 +95,7 @@ async def fursona_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Запрашиваем цвет
         await query.edit_message_text(f"Отлично! Ты выбрал {species}. Теперь напиши цвет (например: рыжий, серый).")
         context.user_data["fursona_step"] = "color"
-    elif data.startswith("color_"):
-        color = data.split('_')[1]
-        await update_fursona(user_id, color=color)
-        await query.edit_message_text("Теперь опиши характер (например: дерзкий, игривый).")
-        context.user_data["fursona_step"] = "personality"
-    # ... и так далее для остальных шагов (можно реализовать через состояния)
+    # ... далее можно добавить другие шаги
 
 async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -244,7 +249,6 @@ async def battle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(result)
 
 async def territory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Показываем карту территорий и кнопку атаки
     status = await territory_status()
     keyboard = [[InlineKeyboardButton("⚔️ Атаковать", callback_data="territory_attack")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -255,7 +259,6 @@ async def territory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
     if data == "territory_attack":
-        # Здесь нужно выбрать территорию и группу для атаки
         # Упрощённо – просто сообщение
         await query.edit_message_text("Функция атаки в разработке.")
 
@@ -302,7 +305,6 @@ async def bite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"*кусает за нос* Хрум! 🐊 (настроение: {mood})")
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Настройки бота в группе"""
     chat = update.effective_chat
     if chat.type == "private":
         await update.message.reply_text("Эта команда только для групп.")
@@ -338,7 +340,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = await transcribe_audio("voice.ogg")
     if text:
         await update.message.reply_text(f"Ты сказал: {text}")
-        # Отправляем в AI
         mood = user_moods.get(update.effective_user.id, random_mood())
         reply = await generate_reply(text, mood)
         await update.message.reply_text(reply)
@@ -365,12 +366,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = await generate_reply(user_message, mood)
     await update.message.reply_text(reply)
 
-# ---------- Главная функция ----------
-def main():
-    asyncio.run(init_db())
-    # Инициализируем территории (если пусто)
-    asyncio.run(init_territories())  # из database
-
+# ---------- Асинхронная инициализация и запуск ----------
+async def async_main():
+    """Асинхронная функция для запуска бота."""
+    await init_db()
+    await init_territories()  # теперь импортировано
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # Команды
@@ -410,9 +410,11 @@ def main():
     # Обычные сообщения (для AI)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    app.run_polling()
+    await app.run_polling()
+
+def main():
+    """Синхронная точка входа."""
+    asyncio.run(async_main())
 
 if __name__ == "__main__":
     main()
