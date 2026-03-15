@@ -17,7 +17,6 @@ def cooldown_check(last_time: str, seconds: int = 86400) -> bool:
 def escape_markdown(text: str) -> str:
     """Экранирует специальные символы для MarkdownV2"""
     # Символы: _ * [ ] ( ) ~ ` > # + - = | { } . !
-    # Дефис ставим в конец, чтобы избежать диапазона в regex
     return re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', str(text))
 
 def format_profile(user_data: tuple, profile_data: tuple, fursona_data: tuple) -> str:
@@ -28,13 +27,14 @@ def format_profile(user_data: tuple, profile_data: tuple, fursona_data: tuple) -
     bio, tags = profile_data[1], profile_data[2] if profile_data else ("", "")
     species, color, personality, interests = fursona_data if fursona_data else ("не указан", "не указан", "не указан", "не указан")
 
+    # Экранируем все пользовательские данные, включая дату (там есть дефис)
     def esc(s):
-        return escape_markdown(s)
+        return escape_markdown(str(s))
 
     return (
         f"🐾 **Профиль {esc(username)}**\n"
         f"┌ ID: `{uid}`\n"
-        f"├ С нами: {created[:10]}\n"
+        f"├ С нами: {esc(created[:10])}\n"
         f"├ Уровень: {lvl} (XP: {xp})\n"
         f"├ Монет: {coins} 🪙\n"
         f"├ Рыбок: {fish} 🐟\n"
