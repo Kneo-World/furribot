@@ -1,6 +1,9 @@
 import httpx
 import random
+import logging
 from config import AI_API_KEY, AI_BASE_URL, AI_MODEL
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Ты — фурри-персонаж по имени Пушистик.
 Твой стиль: дерзкий, саркастичный, ироничный, но дружелюбный.
@@ -11,7 +14,13 @@ SYSTEM_PROMPT = """Ты — фурри-персонаж по имени Пуши
 
 async def generate_reply(user_message: str, mood: str = "cute") -> str:
     if not AI_API_KEY:
-        return f"{random.choice(['Ррр', 'Ня', 'Мяу'])}! Я бы ответил умнее, но у меня нет ключа API. {random.choice(['😼', '😿', '✨'])}"
+        logger.warning("AI_API_KEY не задан, использую заглушку")
+        responses = [
+            "Ррр... К сожалению, у меня нет доступа к AI. Попроси администратора проверить ключи API.",
+            "Мяу, я бы ответил что-то умное, но мой мозг отключён (нет API ключа).",
+            "Ня! Без ключа API я могу только рычать. Рррр!"
+        ]
+        return random.choice(responses)
 
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
@@ -34,12 +43,11 @@ async def generate_reply(user_message: str, mood: str = "cute") -> str:
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
+            logger.error(f"Ошибка AI: {e}")
             return f"Мяу... что-то пошло не так: {str(e)} 😿"
 
 async def compatibility_analysis(user1_id: int, user2_id: int, fursona1: tuple, fursona2: tuple) -> str:
-    """Анализирует совместимость двух фурсон с помощью AI"""
     if not AI_API_KEY:
-        # Заглушка
         compatibility = random.randint(30, 100)
         return f"🤖 Совместимость: {compatibility}% (AI недоступен, использована случайная оценка)"
 
@@ -68,5 +76,6 @@ async def compatibility_analysis(user1_id: int, user2_id: int, fursona1: tuple, 
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
-        except:
+        except Exception as e:
+            logger.error(f"Ошибка AI compatibility: {e}")
             return f"🤖 Совместимость: {random.randint(30,100)}% (AI временно недоступен)"
