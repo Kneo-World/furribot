@@ -411,6 +411,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     user_message = update.message.text
+    logger.info(f"Получено сообщение от {user_id}: {user_message[:50]}")  # <-- ДОБАВЛЕНО
     await create_user(user_id, update.effective_user.username or update.effective_user.first_name)
     await add_xp(user_id, 2)
 
@@ -421,7 +422,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply = await generate_reply(user_message, mood)
     await update.message.reply_text(escape_markdown(reply), parse_mode=ParseMode.MARKDOWN_V2)
-
+    
 # ---------- Инициализация и запуск ----------
 async def init_all():
     await init_db()
