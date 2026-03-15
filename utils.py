@@ -1,4 +1,5 @@
 import random
+import re
 from datetime import datetime, timedelta
 
 MOODS = ["happy", "sleepy", "chaotic", "aggressive", "cute"]
@@ -14,12 +15,9 @@ def cooldown_check(last_time: str, seconds: int = 86400) -> bool:
 
 def escape_markdown(text: str) -> str:
     """Экранирует все специальные символы для MarkdownV2"""
-    # Символы, которые нужно экранировать: _ * [ ] ( ) ~ ` > # + - = | { } . !
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    result = str(text)
-    for ch in special_chars:
-        result = result.replace(ch, '\\' + ch)
-    return result
+    # Список спецсимволов: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    # Экранируем их обратным слешем
+    return re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', str(text))
 
 def format_profile(user_data: tuple, profile_data: tuple, fursona_data: tuple) -> str:
     if not user_data:
