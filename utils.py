@@ -15,13 +15,13 @@ def cooldown_check(last_time: str, seconds: int = 86400) -> bool:
 def escape_markdown(text: str) -> str:
     """
     Экранирует все специальные символы для MarkdownV2.
-    Символы: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    Список символов: _ * [ ] ( ) ~ ` > # + - = | { } . !
     """
     if not isinstance(text, str):
         text = str(text)
-    # Последовательно заменяем каждый символ на экранированную версию
-    chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for ch in chars:
+    # Заменяем каждый символ по очереди
+    special = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for ch in special:
         text = text.replace(ch, '\\' + ch)
     return text
 
