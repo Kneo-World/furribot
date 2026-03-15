@@ -116,6 +116,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = await get_user(user_id)
     profile_data = await get_profile(user_id)
     fursona_data = await get_fursona(user_id)
+    user_data = await get_user(user_id)
+    logger.info(f"user_data: {user_data}")
+    profile_data = await get_profile(user_id)
+    logger.info(f"profile_data: {profile_data}")
+    fursona_data = await get_fursona(user_id)
+    logger.info(f"fursona_data: {fursona_data}")
     await update.message.reply_text(
         format_profile(user_data, profile_data, fursona_data),
         parse_mode=ParseMode.MARKDOWN_V2
@@ -411,7 +417,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     user_message = update.message.text
-    logger.info(f"Получено сообщение от {user_id}: {user_message[:50]}")  # <-- ДОБАВЛЕНО
+    logger.info(f"handle_message received from {user_id}: {user_message[:50]}")  # <-- ДОБАВЛЕНО
     await create_user(user_id, update.effective_user.username or update.effective_user.first_name)
     await add_xp(user_id, 2)
 
